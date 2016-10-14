@@ -1,25 +1,8 @@
 # -*- coding: utf-8 -*-
-"""Class to parse camt files."""
-##############################################################################
-#
-#    Copyright (C) 2013-2018 Therp BV <http://therp.nl>
-#    Copyright 2017 Open Net Sàrl
-#              (C) 2015 1200wd.com
-#
-#    This program is free software: you can redistribute it and/or modify
-#    it under the terms of the GNU Affero General Public License as published
-#    by the Free Software Foundation, either version 3 of the License, or
-#    (at your option) any later version.
-#
-#    This program is distributed in the hope that it will be useful,
-#    but WITHOUT ANY WARRANTY; without even the implied warranty of
-#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-#    GNU Affero General Public License for more details.
-#
-#    You should have received a copy of the GNU Affero General Public License
-#    along with this program.  If not, see <http://www.gnu.org/licenses/>.
-#
-##############################################################################
+# Copyright 2013-2018 Therp BV <http://therp.nl>
+# Copyright 2017 Open Net Sàrl
+# Copyright 2015 1200wd.com
+# License AGPL-3.0 or later (http://www.gnu.org/licenses/agpl.html).
 import logging
 import re
 from copy import copy
@@ -255,6 +238,7 @@ class CamtParser(models.AbstractModel):
         for entry_node in transaction_nodes:
             transaction = statement.create_transaction()
             total_amount += transaction['transferred_amount']
+            transaction.data = etree.tostring(entry_node)
             self.parse_transaction(ns, entry_node, transaction)
         if statement['transactions']:
             execution_date = statement['transactions'][0].execution_date[:10]
