@@ -93,8 +93,7 @@ class CamtParser(models.AbstractModel):
             transaction,
             'message',
             join_str='\n',
-            default=_('No description')
-        )
+            default=_('No description'))
         # eref
         self.add_value_from_node(
             node, [
