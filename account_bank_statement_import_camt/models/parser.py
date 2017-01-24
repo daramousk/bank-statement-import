@@ -155,7 +155,7 @@ class CamtParser(models.AbstractModel):
         batch_node = self.xpath(node, './ns:NtryDtls/ns:Btch')
         if batch_node:
             self.add_value_from_node(
-                batch_node[0], ['/ns:PmtInfId',], transaction, 'eref')
+                batch_node[0], ['./ns:PmtInfId',], transaction, 'eref')
         else:
             self.add_value_from_node(
                 node, './ns:AddtlNtryInf', transaction, 'name')
