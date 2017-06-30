@@ -35,6 +35,6 @@ class ResPartnerBank(models.Model):
                 raise ValidationError(
                     _("Bank account %s already registered for %s.") %
                     (this.acc_number,
-                     already_existing.partner_id.display_name or 
+                     already_existing.partner_id.display_name or
                      _("unknown partner"))
                 )
