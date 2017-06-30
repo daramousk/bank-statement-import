@@ -5,7 +5,6 @@
 # License AGPL-3.0 or later (http://www.gnu.org/licenses/agpl.html).
 import logging
 import re
-from copy import copy
 from datetime import datetime
 from lxml import etree
 
@@ -21,11 +20,6 @@ _logger = logging.getLogger(__name__)
 class CamtParser(models.AbstractModel):
     """Parser for camt bank statement import files."""
     _name = 'account.bank.statement.import.camt.parser'
-
-    def __init__(self):
-        """Define and initialize attributes."""
-        super(CamtParser, self).__init__()
-        self.namespace = ''
 
     def xpath(self, node, expr):
         """
@@ -78,7 +72,7 @@ class CamtParser(models.AbstractModel):
             if default:
                 setattr(obj, attr_name, default)
 
-    def parse_transaction_details(self, ns, node, transaction):
+    def parse_transaction_details(self, node, transaction):
         """Parse TxDtls node."""
         # message
         self.add_value_from_node(
@@ -102,7 +96,7 @@ class CamtParser(models.AbstractModel):
             ],
             transaction, 'eref'
         )
-        amount = self.parse_amount(ns, node)
+        amount = self.parse_amount(node)
         if amount != 0.0:
             transaction['amount'] = amount
         # remote party values
@@ -168,7 +162,7 @@ class CamtParser(models.AbstractModel):
             self.add_value_from_node(
                 node,
                 ['./ns:NtryDtls/ns:RmtInf/ns:Strd/ns:CdtrRefInf/ns:Ref',
-                './ns:NtryDtls/ns:Btch/ns:PmtInfId'],
+                 './ns:NtryDtls/ns:Btch/ns:PmtInfId'],
                 transaction,
                 'eref')
         details_nodes = node.xpath(

@@ -15,10 +15,6 @@ class TestBaseBankAccountNumberUnique(TransactionCase):
             'acc_number': 'BE1234567890',
             'state': 'bank',
         })
-        bank_account_model.create({
-            'acc_number': 'BE 1234 567 890',
-            'state': 'bank',
-        })
         with self.assertRaises(ValidationError):
             bank_account_model.create({
                 'acc_number': 'BE 1234 567 890',

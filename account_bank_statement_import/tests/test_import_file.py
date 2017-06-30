@@ -81,7 +81,7 @@ class TestStatementFile(TransactionCase):
             self.env.cr.execute(
                 "select name, date, amount, ref, bank_account_id"
                 " from account_bank_statement_line"
-                " where statement_id=%d" % statement_obj.id)
+                " where statement_id=%s", (statement_obj.id, ))
             _logger.error(
                 "Transaction not found in %s" %
                 str(self.cr.fetchall())
