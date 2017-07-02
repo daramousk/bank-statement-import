@@ -63,21 +63,32 @@ class TestAccountBankStatementImport(TransactionCase):
     def test_import_preconditions(self):
         """Checks that the import raises an exception if:
          * no bank account found for the account_number
-         * no account_journal found on the bank_account
+         * if the bank account exists, but is not for a company
+
+         The message 'Can not determine journal' is now very hard to trigger
+         because the system sets a journal on a bank account, as soon as it
+         is linked to a company.
         """
+        def assert_raise_no_account(stmt_vals):
+            import_model = self.env['account.bank.statement.import']
+            with self.assertRaises(UserError) as e:
+                import_model._import_statement(stmt_vals.copy())
+            self.assertEqual(
+                e.exception.message,
+                'Can not find the account number 123456789.'
+            )
+
+        ACCOUNT_NUMBER = '123456789'
         stmt_vals = {
             'currency_code': 'EUR',
-            'account_number': '123456789'}
-        with self.assertRaises(UserError) as e:
-            self.statement_import_model._import_statement(stmt_vals.copy())
-        self.assertEqual(e.exception.message,
-                         'Can not find the account number 123456789.')
-        self.statement_import_model._create_bank_account('123456789')
-        with self.assertRaises(UserError) as e:
-            self.statement_import_model._import_statement(stmt_vals.copy())
-        self.assertEqual(
-            e.exception.message[:25], 'Can not determine journal'
-        )
+            'account_number': ACCOUNT_NUMBER,
+        }
+        # Check error before any bank created
+        assert_raise_no_account(stmt_vals)
+        # Now create a non company account. Error should still be raised
+        import_model = self.env['account.bank.statement.import']
+        import_model._create_bank_account(ACCOUNT_NUMBER)
+        assert_raise_no_account(stmt_vals)
 
     def test_find_company_bank_account_id(self):
         """Checks wether code can find the right bank account.
