@@ -79,6 +79,32 @@ class TestAccountBankStatementImport(TransactionCase):
             e.exception.message[:25], 'Can not determine journal'
         )
 
+    def test_find_company_bank_account_id(self):
+        """Checks wether code can find the right bank account.
+         * With duplicates, take the one for the company
+         * With no account number specified, use journal to find account
+        """
+        import_model = self.env['account.bank.statement.import']
+        ACCOUNT_NUMBER = '123456789'
+        self.statement_import_model._create_bank_account(
+            ACCOUNT_NUMBER
+        )
+        company_bank = self.statement_import_model._create_bank_account(
+            ACCOUNT_NUMBER, company_id=self.env.user.company_id.id
+        )
+        # Create another company bank account
+        self.statement_import_model._create_bank_account(
+            '987654321', company_id=self.env.user.company_id.id
+        )
+        # find bank account with account number
+        found_id = import_model._find_company_bank_account_id(ACCOUNT_NUMBER)
+        self.assertEqual(found_id, company_bank.id)
+        # find bank account with journal
+        found_id = import_model.with_context(
+            journal_id=company_bank.journal_id.id,
+        )._find_company_bank_account_id('')
+        self.assertEqual(found_id, company_bank.id)
+
     def test_create_bank_account(self):
         """Checks that the bank_account created by the import belongs to the
         partner linked to the company of the provided journal
