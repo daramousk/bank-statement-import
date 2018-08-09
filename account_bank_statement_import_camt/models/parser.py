@@ -1,18 +1,18 @@
 # -*- coding: utf-8 -*-
-# Copyright 2013-2018 Therp BV <http://therp.nl>
-# Copyright 2017 Open Net Sàrl
-# Copyright 2015 1200wd.com
-# License AGPL-3.0 or later (http://www.gnu.org/licenses/agpl.html).
+# Copyright 2013-2018 Therp BV <https://therp.nl>.
+# Copyright 2015 1200wd.com.
+# Copyright 2017 Open Net Sàrl.
+# License AGPL-3.0 or later (http://www.gnu.org/licenses/agpl).
 import logging
 import re
+from copy import copy
 from datetime import datetime
 from lxml import etree
 
-from openerp import _
+from openerp import _, models
+
 from openerp.addons.account_bank_statement_import.parserlib import (
     BankStatement)
-
-from openerp import models
 
 _logger = logging.getLogger(__name__)
 
@@ -30,21 +30,29 @@ class CamtParser(models.AbstractModel):
         return node.xpath(expr, namespaces={'ns': self.namespace})
 
     def parse_amount(self, node):
-        """Parse element that contains Amount and CreditDebitIndicator."""
+        """Parse element that contains Amount and CreditDebitIndicator.
+
+        First try to get debit/credit and amount from transaction details.
+        If not possible, try to get them from ancester element entry.
+
+        Function is also called for statement opening balance!
+        Therefore also search for amount anywhere in node, if not found
+        elsewhere.
+        """
         if node is None:
             return 0.0
         sign = 1
         amount = 0.0
-        sign_node = node.xpath('ns:CdtDbtInd', namespaces={'ns': ns})
+        sign_node = self.xpath(node, '../../ns:CdtDbtInd')
         if not sign_node:
-            sign_node = node.xpath(
-                '../../ns:CdtDbtInd', namespaces={'ns': ns})
+            sign_node = self.xpath(node, 'ns:CdtDbtInd')
         if sign_node and sign_node[0].text == 'DBIT':
             sign = -1
-        amount_node = node.xpath('ns:Amt', namespaces={'ns': ns})
+        amount_node = self.xpath(node, './ns:AmtDtls/ns:TxAmt/ns:Amt')
         if not amount_node:
-            amount_node = node.xpath(
-                './ns:AmtDtls/ns:TxAmt/ns:Amt', namespaces={'ns': ns})
+            amount_node = self.xpath(node, '../../ns:Amt')
+            if not amount_node:
+                amount_node = self.xpath(node, 'ns:Amt')
         if amount_node:
             amount = sign * float(amount_node[0].text)
         return amount
@@ -73,11 +81,10 @@ class CamtParser(models.AbstractModel):
                 setattr(obj, attr_name, default)
 
     def parse_transaction_details(self, node, transaction):
-        """Parse TxDtls node."""
+        """Parse transaction details (message, party, account...)."""
         # message
         self.add_value_from_node(
-            node,
-            [
+            node, [
                 './ns:RmtInf/ns:Ustrd',
                 './ns:AddtlTxInf',
                 './ns:AddtlNtryInf',
@@ -94,8 +101,7 @@ class CamtParser(models.AbstractModel):
                 './ns:RmtInf/ns:Strd/ns:CdtrRefInf/ns:Ref',
                 './ns:Refs/ns:EndToEndId',
             ],
-            transaction, 'eref'
-        )
+            transaction, 'eref')
         amount = self.parse_amount(node)
         if amount != 0.0:
             transaction['amount'] = amount
@@ -107,21 +113,17 @@ class CamtParser(models.AbstractModel):
         party_node = self.xpath(node, './ns:RltdPties/ns:%s' % party_type)
         if party_node:
             self.add_value_from_node(
-                party_node[0], './ns:Nm', transaction, 'remote_owner'
-            )
+                party_node[0], './ns:Nm', transaction, 'remote_owner')
             self.add_value_from_node(
                 party_node[0], './ns:PstlAdr/ns:Ctry', transaction,
-                'remote_owner_country'
-            )
+                'remote_owner_country')
             address_node = self.xpath(
-                party_node[0], './ns:PstlAdr/ns:AdrLine'
-            )
+                party_node[0], './ns:PstlAdr/ns:AdrLine')
             if address_node:
                 transaction.remote_owner_address = [address_node[0].text]
         # Get remote_account from iban or from domestic account:
         account_node = self.xpath(
-            node, './ns:RltdPties/ns:%sAcct/ns:Id' % party_type
-        )
+            node, './ns:RltdPties/ns:%sAcct/ns:Id' % party_type)
         if account_node:
             iban_node = self.xpath(account_node[0], './ns:IBAN')
             if iban_node:
@@ -129,22 +131,35 @@ class CamtParser(models.AbstractModel):
                 bic_node = self.xpath(
                     node,
                     './ns:RltdAgts/ns:%sAgt/ns:FinInstnId/ns:BIC'
-                    % party_type
-                )
+                    % party_type)
                 if bic_node:
                     transaction.remote_bank_bic = bic_node[0].text
             else:
                 self.add_value_from_node(
                     account_node[0], './ns:Othr/ns:Id', transaction,
-                    'remote_account'
-                )
+                    'remote_account')
 
-    def parse_transaction(self, node, transaction):
+    def default_transaction_data(self, node, transaction):
+        if not transaction.eref:
+            batch_node = self.xpath(node, './ns:NtryDtls/ns:Btch')
+            if batch_node:
+                self.add_value_from_node(
+                    batch_node[0], './ns:PmtInfId', transaction, 'eref')
+            else:
+                self.add_value_from_node(
+                    node,
+                    ['./ns:NtryDtls/ns:RmtInf/ns:Strd/ns:CdtrRefInf/ns:Ref',
+                     './ns:NtryDtls/ns:Btch/ns:PmtInfId'],
+                    transaction,
+                    'eref')
+        if not transaction.message:
+            self.add_value_from_node(
+                node, './ns:AddtlNtryInf', transaction, 'message')
+
+    def parse_entry(self, node, transaction):
         """Parse transaction (entry) node."""
         self.add_value_from_node(
-            node, './ns:BkTxCd/ns:Prtry/ns:Cd', transaction,
-            'transfer_type'
-        )
+            node, './ns:BkTxCd/ns:Prtry/ns:Cd', transaction, 'transfer_type')
         self.add_value_from_node(
             node, './ns:BookgDt/ns:Dt', transaction, 'date')
         self.add_value_from_node(
@@ -152,39 +167,20 @@ class CamtParser(models.AbstractModel):
         self.add_value_from_node(
             node, './ns:ValDt/ns:Dt', transaction, 'value_date')
         transaction.transferred_amount = self.parse_amount(node)
-        batch_node = self.xpath(node, './ns:NtryDtls/ns:Btch')
-        if batch_node:
-            self.add_value_from_node(
-                batch_node[0], './ns:PmtInfId', transaction, 'eref')
-        else:
-            self.add_value_from_node(
-                node, './ns:AddtlNtryInf', transaction, 'name')
-            self.add_value_from_node(
-                node,
-                ['./ns:NtryDtls/ns:RmtInf/ns:Strd/ns:CdtrRefInf/ns:Ref',
-                 './ns:NtryDtls/ns:Btch/ns:PmtInfId'],
-                transaction,
-                'eref')
-        details_nodes = node.xpath(
-            './ns:NtryDtls/ns:TxDtls', namespaces={'ns': ns})
-        if len(details_nodes) == 0:
+        self.add_value_from_node(
+            node, './ns:AddtlNtryInf', transaction, 'name')
+        detail_nodes = self.xpath(node, './ns:NtryDtls/ns:TxDtls')
+        if len(detail_nodes) == 0:
+            self.default_transaction_data(node, transaction)
             transaction.data = etree.tostring(node)
             yield transaction
             return
         transaction_base = transaction
-        for i, dnode in enumerate(details_nodes):
+        for i, dnode in enumerate(detail_nodes):
             transaction = copy(transaction_base)
-            self.parse_transaction_details(ns, dnode, transaction)
-            # transactions['data'] should be a synthetic xml snippet which
-            # contains only the TxDtls that's relevant.
-            # only set this field if statement lines have it
-            if 'data' in self.pool['account.bank.statement.line']._fields:
-                data = copy(node)
-                for j, dnode in enumerate(data.xpath(
-                        './ns:NtryDtls/ns:TxDtls', namespaces={'ns': ns})):
-                    if j != i:
-                        dnode.getparent().remove(dnode)
-                transaction['data'] = etree.tostring(data)
+            self.parse_transaction_details(dnode, transaction)
+            self.default_transaction_data(node, transaction)
+            transaction.data = etree.tostring(dnode)
             yield transaction
 
     def get_balance_type_node(self, node, balance_type):
@@ -249,13 +245,16 @@ class CamtParser(models.AbstractModel):
             node, './ns:Acct/ns:Ccy', statement, 'local_currency')
         statement.start_balance = self.get_start_balance(node)
         statement.end_balance = self.get_end_balance(node)
-        transaction_nodes = self.xpath(node, './ns:Ntry')
+        entry_nodes = self.xpath(node, './ns:Ntry')
         total_amount = 0
-        for entry_node in transaction_nodes:
+        transactions = []
+        for entry_node in entry_nodes:
+            # There might be multiple transactions in one entry!!
             transaction = statement.create_transaction()
-            transaction.data = etree.tostring(entry_node)
-            self.parse_transaction(entry_node, transaction)
+            transactions.extend(self.parse_entry(entry_node, transaction))
+        for transaction in transactions:
             total_amount += transaction.transferred_amount
+        statement['transactions'] = transactions
         if statement['transactions']:
             execution_date = statement['transactions'][0].execution_date[:10]
             statement.date = datetime.strptime(execution_date, "%Y-%m-%d")
@@ -270,8 +269,7 @@ class CamtParser(models.AbstractModel):
                   " Total amount %s."),
                 statement.start_balance,
                 statement.end_balance,
-                total_amount
-            )
+                total_amount)
         return statement
 
     def check_version(self, root):
